@@ -1,0 +1,73 @@
+# simulation_supersclaer.py
+
+import m5
+from m5.objects import *
+import os
+
+# --------------------------
+# Basic System Configuration
+# --------------------------
+system = System()
+
+system.clk_domain = SrcClockDomain()
+system.clk_domain.clock = '1GHz'
+system.clk_domain.voltage_domain = VoltageDomain()
+
+system.mem_mode = 'timing'
+system.mem_ranges = [AddrRange('512MB')]
+
+# --------------------------
+# Superscalar CPU Configuration
+# --------------------------
+# Use an out-of-order CPU (DerivO3CPU) and configure its widths.
+system.cpu = DerivO3CPU()
+# Configure superscalar widths: here we assume a 4-issue machine.
+system.cpu.fetchWidth  = 4
+system.cpu.decodeWidth = 4
+system.cpu.renameWidth = 4
+system.cpu.issueWidth  = 4
+system.cpu.commitWidth = 4
+# Optionally, use a branch predictor.
+system.cpu.branchPred  = TournamentBP()
+
+# --------------------------
+# Interconnect Configuration
+# --------------------------
+system.membus = SystemXBar()
+system.cpu.icache_port = system.membus.cpu_side_ports
+system.cpu.dcache_port = system.membus.cpu_side_ports
+
+system.cpu.createInterruptController()
+system.cpu.interrupts[0].pio           = system.membus.mem_side_ports
+system.cpu.interrupts[0].int_requestor = system.membus.cpu_side_ports
+system.cpu.interrupts[0].int_responder = system.membus.mem_side_ports
+system.system_port = system.membus.cpu_side_ports
+
+# --------------------------
+# Memory Controller
+# --------------------------
+system.mem_ctrl = MemCtrl()
+system.mem_ctrl.dram = DDR3_1600_8x8()
+system.mem_ctrl.dram.range = system.mem_ranges[0]
+system.mem_ctrl.port = system.membus.mem_side_ports
+
+# --------------------------
+# Workload Configuration
+# --------------------------
+binary = 'tests/test-progs/hello/bin/x86/linux/hello'
+system.workload = SEWorkload.init_compatible(binary)
+proc = Process()
+proc.cmd = [binary]
+proc.cwd = os.path.dirname(binary)
+system.cpu.workload = proc
+system.cpu.createThreads()
+
+# --------------------------
+# Instantiate and Run Simulation
+# --------------------------
+root = Root(full_system=False, system=system)
+m5.instantiate()
+
+print("Beginning superscalar simulation!")
+exit_event = m5.simulate()
+print("Exiting @ tick {} because {}.".format(m5.curTick(), exit_event.getCause()))
